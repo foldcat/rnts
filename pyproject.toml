@@ -10,3 +10,6 @@ dependencies = []
 dev = [
     "ruff>=0.15.17",
 ]
+
+[project.scripts]
+rnts = "rnts.cli:main"
