@@ -64,7 +64,7 @@ def main() -> None:
     # look up the task or commands
     if not hasattr(module_instance, cmd_name):
         print(
-            f"❌ Error: Command or Task '{cmd_name}' not found on module '{mod_name}'."
+            f"Error: Command or Task '{cmd_name}' not found on module '{mod_name}'."
         )
         sys.exit(1)
 
