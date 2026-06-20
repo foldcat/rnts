@@ -104,13 +104,8 @@ def task(func: Callable[Concatenate[M, P], R]) -> Callable[Concatenate[M, P], R]
             return cast(R, _PROCESS_CACHE[key])
 
         # define the path where task metadata and cache state are saved
-        meta_file = (
-            self.module_dir
-            / "out"
-            / "hashes"
-            / self.module_name
-            / f"{func.__name__}.json"
-        )
+        out_base = Path.cwd()/ "out" / self.__class__.__name__ / self.module_name
+        meta_file = out_base / "hashes" / f"{func.__name__}.json"
 
         # this part is atrocious
         if meta_file.exists():
@@ -201,7 +196,8 @@ def task(func: Callable[Concatenate[M, P], R]) -> Callable[Concatenate[M, P], R]
 
         # track task execution context and establish dedicated output directory
         ctx.push_task(self.module_name, func.__name__)
-        out_dir = self.module_dir / "out" / self.module_name / func.__name__
+
+        out_dir = out_base / func.__name__
         out_dir.mkdir(parents=True, exist_ok=True)
 
         try:
@@ -242,14 +238,13 @@ def source(func: Callable[[M], Path]) -> Callable[[M], Path]:
 
         # write computed hash tracking file to disk
         hash_file = (
-            self.module_dir / "out" / "hashes" / self.module_name / func.__name__
+            Path.cwd() / "out" / self.__class__.__name__ / self.module_name / "hashes" / func.__name__
         )
         hash_file.parent.mkdir(parents=True, exist_ok=True)
         _ = hash_file.write_text(current_hash)
 
         ctx.record_source(self.module_name, func.__name__, current_hash)
         return src_dir
-
     return wrapper
 
 
@@ -257,6 +252,14 @@ def command(func: Callable[Concatenate[M, P], R]) -> Callable[Concatenate[M, P],
     # simple passthrough decorator for basic tasks without implicit cache rules
     @functools.wraps(func)
     def wrapper(self: M, *args: P.args, **kwargs: P.kwargs) -> R:
-        return func(self, *args, **kwargs)
+            ctx.push_task(self.module_name, func.__name__)
+            # Command out directory layout matching tasks
+            out_dir = Path.cwd() / "out" / self.__class__.__name__ / self.module_name / func.__name__
+            out_dir.mkdir(parents=True, exist_ok=True)
+            try:
+                with ctx.set_dest(out_dir):
+                    return func(self, *args, **kwargs)
+            finally:
+                ctx.pop_task()
 
     return cast(Callable[Concatenate[M, P], R], wrapper)

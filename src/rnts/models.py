@@ -19,7 +19,6 @@ from typing import final, override, ClassVar
 @final
 class PathRef:
     """Wraps a path and handles hashing for change-detection."""
-
     def __init__(self, path: Path | str):
         self.path = Path(path)
 
@@ -30,17 +29,19 @@ class PathRef:
 
 class Module:
     """Base class for organizing groups of related tasks."""
-
     module_name: str
     module_dir: Path
     _registry: ClassVar[dict[str, "Module"]] = {}
 
-    def __init__(self, name: str | None = None):
-        self.module_name = name or self.__class__.__name__
-        self.module_dir = Path.cwd()
+    def __init__(self, name: str):
+        if not name or not name.strip():
+            raise ValueError("Module 'name' must be explicitly defined and cannot be empty.")
+        
+        self.module_name = name
+        # source base starts directly at the project workspace root / module name
+        self.module_dir = Path.cwd() / name
         Module._registry[self.module_name] = self
 
     @classmethod
-    def get_module(cls, name: str) -> "Module | None":
-        """Public accessor lookup to bypass explicit internal dictionary checks."""
+    def get_module(cls, name: str) -> Module | None:
         return cls._registry.get(name)
