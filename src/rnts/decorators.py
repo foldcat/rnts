@@ -104,8 +104,8 @@ def task(func: Callable[Concatenate[M, P], R]) -> Callable[Concatenate[M, P], R]
             return cast(R, _PROCESS_CACHE[key])
 
         # define the path where task metadata and cache state are saved
-        out_base = Path.cwd() / "out" / self.__class__.__name__ / self.module_name
-        meta_file = out_base / "hashes" / f"{func.__name__}.json"
+        out_base = Path.cwd() / "out" / "modules" / self.__class__.__name__ / self.module_name
+        meta_file = Path.cwd() / "out" / "hashes" / self.__class__.__name__ / self.module_name / f"{func.__name__}.json"
 
         # this part is atrocious
         if meta_file.exists():
@@ -132,9 +132,10 @@ def task(func: Callable[Concatenate[M, P], R]) -> Callable[Concatenate[M, P], R]
                                         Callable[[], None], getattr(mod, str(src_name))
                                     )()
                                     curr_hash_file = (
-                                        mod.module_dir
+                                        Path.cwd()
                                         / "out"
                                         / "hashes"
+                                        / mod.__class__.__name__
                                         / str(src_mod_name)
                                         / str(src_name)
                                     )
@@ -240,9 +241,9 @@ def source(func: Callable[[M], Path]) -> Callable[[M], Path]:
         hash_file = (
             Path.cwd()
             / "out"
+            / "hashes"
             / self.__class__.__name__
             / self.module_name
-            / "hashes"
             / func.__name__
         )
         hash_file.parent.mkdir(parents=True, exist_ok=True)
@@ -263,6 +264,7 @@ def command(func: Callable[Concatenate[M, P], R]) -> Callable[Concatenate[M, P],
         out_dir = (
             Path.cwd()
             / "out"
+            / "modules"
             / self.__class__.__name__
             / self.module_name
             / func.__name__
