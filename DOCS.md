@@ -93,10 +93,10 @@ The `RntsRuntime` class (imported as the `rnts` variable) provides helper method
 ### Command Execution and File Operations
 
 * `rnts.sh(args, cwd, env, inherit_stdout)`: A wrapper around `subprocess.run` with `check=True` baked in.
-* **`rnts.cp(src, dest)`:** A copy utility that automatically determines whether to use `shutil.copy2` (for files) 
+* `rnts.cp(src, dest)`: A copy utility that automatically determines whether to use `shutil.copy2` (for files) 
 or `shutil.copytree` (for directories).
-* **`rnts.relativize(path)`:** Converts an absolute path to a path relative to the workspace root.
-* **`rnts.join_paths(paths)`:** Joins paths using the OS-specific path separator.
+* `rnts.relativize(path)`: Converts an absolute path to a path relative to the workspace root.
+* `rnts.join_paths(paths)`: Joins paths using the OS-specific path separator.
 
 ### Concurrency: `rnts.gather()`
 
