@@ -2,6 +2,8 @@
 
 `rnts`, short for "run this", is a build tool / command runner written in Python.
 
+See [docs](DOCS.md) for documentation.
+
 ```python
 from pathlib import Path
 from rnts import rnts, Module, source, task, command, PathRef, ctx
@@ -60,7 +62,7 @@ CProjectBuilder()
 # run `rnts frontend.build_all` to execute
 ```
 
-## Building
+## Installing
 You will need `uv`.
 ```bash
 uv tool install --editable .
