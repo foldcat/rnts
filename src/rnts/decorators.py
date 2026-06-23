@@ -117,159 +117,160 @@ def _deserialize_val(val: object) -> object:
     return val
 
 
+class CacheManager:
+    """Manages reading, verifying, and writing metadata caches for tasks."""
+
+    def __init__(self, module: Module, func_name: str) -> None:
+        self.module_name: str = module.module_name
+        self.func_name: str = func_name
+        self.module_class_name: str = module.__class__.__name__
+
+        self.out_base: Path = (
+            Path.cwd() / "out" / "modules" / self.module_class_name / self.module_name
+        )
+        self.meta_file: Path = (
+            Path.cwd()
+            / "out"
+            / "hashes"
+            / self.module_class_name
+            / self.module_name
+            / f"{func_name}.json"
+        )
+
+    def check_cache_validity(self) -> tuple[bool, object | None]:
+        """
+        Verifies if the cache metadata file exists and all dependencies are valid.
+        Returns a tuple of (is_valid, serialized_return_value).
+        """
+        if not self.meta_file.exists():
+            return False, None
+
+        try:
+            meta = cast(dict[str, object], json.loads(self.meta_file.read_text()))
+
+            # verify tracked source file hashes
+            sources = meta.get("sources")
+            if isinstance(sources, list):
+                # it was originall of type unknown but pyright doesn't like it so we do this
+                for src_item in cast(list[object], sources):
+                    if isinstance(src_item, list):
+                        typed_src = cast(list[object], src_item)
+                        if len(typed_src) == 3:
+                            src_mod_name, src_name, expected_hash = typed_src
+
+                            mod = Module.get_module(str(src_mod_name))
+                            if not mod:
+                                return False, None
+
+                            # recalculate current hash state on disk
+                            cast(Callable[[], None], getattr(mod, str(src_name)))()
+
+                            curr_hash_file = (
+                                Path.cwd()
+                                / "out"
+                                / "hashes"
+                                / mod.__class__.__name__
+                                / str(src_mod_name)
+                                / str(src_name)
+                            )
+                            if (
+                                not curr_hash_file.exists()
+                                or curr_hash_file.read_text().strip()
+                                != str(expected_hash)
+                            ):
+                                return False, None
+                        else:
+                            return False, None
+
+            # verify output values of upstream tasks
+            tasks = meta.get("tasks")
+            if isinstance(tasks, list):
+                # another pyright typecheck issue...
+                for task_item in cast(list[object], tasks):
+                    if isinstance(task_item, list):
+                        typed_task = cast(list[object], task_item)
+                        if len(typed_task) == 3:
+                            dep_mod_name, dep_task_name, expected_val_serialized = (
+                                typed_task
+                            )
+
+                            mod = Module.get_module(str(dep_mod_name))
+                            if not mod:
+                                return False, None
+
+                            curr_task = cast(
+                                Callable[[], object], getattr(mod, str(dep_task_name))
+                            )
+                            curr_val = curr_task()
+                            if _serialize_val(curr_val) != expected_val_serialized:
+                                return False, None
+                        else:
+                            return False, None
+
+            return True, meta.get("return_value")
+
+        except Exception:
+            return False, None
+
+    def write_cache(self, result: object) -> object:
+        """Serializes the result, persists the metadata JSON onto the disk, and returns the serialized result."""
+        deps = ctx.get_dependencies(self.module_name, self.func_name)
+        serialized_res = _serialize_val(result)
+        meta_data = {
+            "sources": deps["sources"],
+            "tasks": deps["tasks"],
+            "return_value": serialized_res,
+        }
+
+        self.meta_file.parent.mkdir(parents=True, exist_ok=True)
+        _ = self.meta_file.write_text(json.dumps(meta_data, indent=4))
+        return serialized_res
+
+
 def task(func: Callable[Concatenate[M, P], R]) -> Callable[Concatenate[M, P], R]:
     # decorator to cache and track build tasks based on dependencies
     @functools.wraps(func)
     def wrapper(self: M, *args: P.args, **kwargs: P.kwargs) -> R:
-        # check if the result is already in the cache
+        # does the process cache has it? if yes then we go fast path
         if _PROCESS_CACHE.has(self.module_name, func.__name__):
             return cast(R, _PROCESS_CACHE.get(self.module_name, func.__name__))
 
-        # define the path where task metadata and cache state are saved
-        out_base = (
-            Path.cwd() / "out" / "modules" / self.__class__.__name__ / self.module_name
-        )
-        meta_file = (
-            Path.cwd()
-            / "out"
-            / "hashes"
-            / self.__class__.__name__
-            / self.module_name
-            / f"{func.__name__}.json"
-        )
+        cache_mgr = CacheManager(self, func.__name__)
+        is_valid, serialized_val = cache_mgr.check_cache_validity()
 
-        # this part is atrocious
-        if meta_file.exists():
-            try:
-                # load existing metadata for validation
-                meta = cast(dict[str, object], json.loads(meta_file.read_text()))
+        if is_valid:
+            cached_res = _deserialize_val(serialized_val)
+            _PROCESS_CACHE.set(self.module_name, func.__name__, cached_res)
+            ctx.record_upstream_hit(self.module_name, func.__name__, serialized_val)
+            return cast(R, cached_res)
 
-                # verify if the tracked source file hashes still match
-                sources_match = True
-                sources = meta.get("sources")
-                if isinstance(sources, list):
-                    for src_item in cast(list[object], sources):
-                        if isinstance(src_item, list):
-                            src_list = cast(list[object], src_item)
-                            if len(src_list) == 3:
-                                src_mod_name = src_list[0]
-                                src_name = src_list[1]
-                                expected_hash = src_list[2]
-
-                                mod = Module.get_module(str(src_mod_name))
-                                if mod:
-                                    # invoke source function to recalculate current state
-                                    cast(
-                                        Callable[[], None], getattr(mod, str(src_name))
-                                    )()
-                                    curr_hash_file = (
-                                        Path.cwd()
-                                        / "out"
-                                        / "hashes"
-                                        / mod.__class__.__name__
-                                        / str(src_mod_name)
-                                        / str(src_name)
-                                    )
-                                    # invalidate if hash file is missing or contents differ
-                                    if (
-                                        not curr_hash_file.exists()
-                                        or curr_hash_file.read_text().strip()
-                                        != str(expected_hash)
-                                    ):
-                                        sources_match = False
-                                        break
-                                else:
-                                    sources_match = False
-                                    break
-
-                # verify if the output values of upstream tasks still match
-                tasks_match = True
-                if sources_match:
-                    tasks = meta.get("tasks")
-                    if isinstance(tasks, list):
-                        for task_item in cast(list[object], tasks):
-                            if isinstance(task_item, list):
-                                task_list = cast(list[object], task_item)
-                                if len(task_list) == 3:
-                                    dep_mod_name = task_list[0]
-                                    dep_task_name = task_list[1]
-                                    expected_val_serialized = task_list[2]
-
-                                    mod = Module.get_module(str(dep_mod_name))
-                                    if mod:
-                                        # evaluate dependent task to get its current value
-                                        curr_task = cast(
-                                            Callable[[], object],
-                                            getattr(mod, str(dep_task_name)),
-                                        )
-                                        curr_val = curr_task()
-                                        # invalidate if current serialization deviates from cached value
-                                        if (
-                                            _serialize_val(curr_val)
-                                            != expected_val_serialized
-                                        ):
-                                            tasks_match = False
-                                            break
-                                    else:
-                                        tasks_match = False
-                                        break
-
-                # if sources and dependent tasks match, reuse the cached return value
-                if sources_match and tasks_match:
-                    return_val = meta.get("return_value")
-                    cached_res = _deserialize_val(return_val)
-                    _PROCESS_CACHE.set(self.module_name, func.__name__, cached_res)
-
-                    ctx.record_upstream_hit(self.module_name, func.__name__, return_val)
-                    return cast(R, cached_res)
-
-            except Exception:
-                # fall back to executing the task if any parsing or verification error occurs
-                pass
-
-        # track task execution context and establish dedicated output directory
+        # doesn't exist, lets run the underlying task
         ctx.push_task(self.module_name, func.__name__)
-
-        out_dir = out_base / func.__name__
+        out_dir = cache_mgr.out_base / func.__name__
         out_dir.mkdir(parents=True, exist_ok=True)
 
         try:
-            # execute the underlying task function with isolated destination path
             with ctx.set_dest(out_dir):
                 result = func(self, *args, **kwargs)
 
             _PROCESS_CACHE.set(self.module_name, func.__name__, result)
-
-            # harvest metadata details to persist cache state on disk
-            deps = ctx.get_dependencies(self.module_name, func.__name__)
-            serialized_res = _serialize_val(result)
-            meta_data = {
-                "sources": deps["sources"],
-                "tasks": deps["tasks"],
-                "return_value": serialized_res,
-            }
-            meta_file.parent.mkdir(parents=True, exist_ok=True)
-            _ = meta_file.write_text(json.dumps(meta_data, indent=4))
-
+            serialized_res = cache_mgr.write_cache(result)
             ctx.record_upstream_miss(self.module_name, func.__name__, serialized_res)
+
             return result
         finally:
-            # ensure context scope pops back up when complete
             ctx.pop_task()
 
-    # tag the wrapper so framework can recognize valid tasks
     setattr(wrapper, "__is_rnts_task__", True)
     return cast(Callable[Concatenate[M, P], R], wrapper)
 
 
 def source(func: Callable[[M], Path]) -> Callable[[M], Path]:
-    # decorator to register and compute hashes for module source directories
     @functools.wraps(func)
     def wrapper(self: M) -> Path:
         src_dir = func(self)
         current_hash = _compute_dir_hash(self.module_dir / src_dir)
 
-        # write computed hash tracking file to disk
         hash_file = (
             Path.cwd()
             / "out"
@@ -288,11 +289,9 @@ def source(func: Callable[[M], Path]) -> Callable[[M], Path]:
 
 
 def command(func: Callable[Concatenate[M, P], R]) -> Callable[Concatenate[M, P], R]:
-    # simple passthrough decorator for basic tasks without implicit cache rules
     @functools.wraps(func)
     def wrapper(self: M, *args: P.args, **kwargs: P.kwargs) -> R:
         ctx.push_task(self.module_name, func.__name__)
-        # Command out directory layout matching tasks
         out_dir = (
             Path.cwd()
             / "out"
