@@ -4,7 +4,9 @@ version = "0.1.0"
 description = "a build tool written in Python"
 readme = "README.md"
 requires-python = ">=3.14"
-dependencies = []
+dependencies = [
+    "filelock>=3.29.4",
+]
 
 [dependency-groups]
 dev = [
