@@ -13,6 +13,7 @@
 #  limitations under the License.
 
 import functools
+import io
 import hashlib
 import json
 from pathlib import Path
@@ -22,7 +23,7 @@ from filelock import FileLock
 import dill  # pyright: ignore[reportMissingTypeStubs]
 import base64
 
-from .context import ctx
+from .context import ctx, output_channel, task_stderr_buffer, task_stdout_buffer
 from .models import Module
 
 P = ParamSpec("P")
@@ -213,6 +214,12 @@ def task(func: Callable[Concatenate[M, P], R]) -> Callable[Concatenate[M, P], R]
             ctx.record_upstream_hit(self.module_name, func.__name__, serialized_val)
             return cast(R, cached_res)
 
+        # setup string buffers for current thread context
+        stdout_buf = io.StringIO()
+        stderr_buf = io.StringIO()
+        token_out = task_stdout_buffer.set(stdout_buf)
+        token_err = task_stderr_buffer.set(stderr_buf)
+
         # doesn't exist, lets run the underlying task
         ctx.push_task(self.module_name, func.__name__)
         out_dir = cache_mgr.out_base / func.__name__
@@ -225,10 +232,16 @@ def task(func: Callable[Concatenate[M, P], R]) -> Callable[Concatenate[M, P], R]
             _PROCESS_CACHE.set(self.module_name, func.__name__, result)
             serialized_res = cache_mgr.write_cache(result)
             ctx.record_upstream_miss(self.module_name, func.__name__, serialized_res)
-
             return result
         finally:
             ctx.pop_task()
+            # reset context var
+            task_stdout_buffer.reset(token_out)
+            task_stderr_buffer.reset(token_err)
+            # offload task logs as a single batch to the channel
+            # then it will be printed sometimes in future
+            output_channel.put("stdout", stdout_buf.getvalue())
+            output_channel.put("stderr", stderr_buf.getvalue())
 
     setattr(wrapper, "__is_rnts_task__", True)
     return cast(Callable[Concatenate[M, P], R], wrapper)

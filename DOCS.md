@@ -105,6 +105,12 @@ or `shutil.copytree` (for directories).
 `rnts.gather(*tasks)` takes a list of callable functions, copies the current context (`contextvars.copy_context()`), 
 and runs them concurrently in a `ThreadPoolExecutor` sized to the host's CPU core count.
 
+### Task Output Capturing
+
+`rnts` captures the output of `stdout` and `stderr`. Once the task is done, it will send the accumulated logs to be printed.
+This ensures that the print output of different tasks will not be juxtaposed, but note that the output of commands and 
+any print statements will not be reflected on the terminal instantly.
+
 ## Type Serialization (`models.py` & Internals)
 
 Because `@task` return values are cached to disk as JSON metadata, `rnts` needs to serialize and deserialize Python objects.
