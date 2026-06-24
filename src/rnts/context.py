@@ -28,6 +28,8 @@ task_stdout_buffer: ContextVar[io.StringIO | None] = ContextVar(
 task_stderr_buffer: ContextVar[io.StringIO | None] = ContextVar(
     "task_stderr_buffer", default=None
 )
+# tracks if the current execution stack allows direct terminal interaction
+task_interactive: ContextVar[bool] = ContextVar("task_interactive", default=False)
 
 
 class OutputChannel:
@@ -82,14 +84,16 @@ class ContextStream:
 
     def write(self, text: str) -> int:
         buf = self.context_var.get()
-        if buf is not None:
+        # bypass buffer if interactive mode is set
+        if buf is not None and not task_interactive.get():
             return buf.write(text)
         _ = self.original_stream.write(text)
         return len(text)
 
     def flush(self) -> None:
         buf = self.context_var.get()
-        if buf is not None:
+        # bypass buffer if interactive mode is set
+        if buf is not None and not task_interactive.get():
             buf.flush()
         else:
             self.original_stream.flush()
