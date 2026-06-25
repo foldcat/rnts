@@ -16,6 +16,8 @@ import importlib.util
 import sys
 from pathlib import Path
 from typing import Callable, cast
+from rnts.decorators import compute_dir_hash
+import shutil
 from .models import Module
 from .context import output_channel
 
@@ -41,6 +43,7 @@ def main() -> None:
         sys.exit(1)
 
     lock_path = Path.cwd() / "out" / ".rnts.lock"
+    rnts_path = Path.cwd() / "out" / "rnts"
 
     try:
         # detect / write lock file
@@ -53,15 +56,28 @@ def main() -> None:
             )
             sys.exit(1)
 
-        lock_path.parent.mkdir(parents=True, exist_ok=True)
-        lock_path.touch()
-
         # find and load the build file
         if not load_user_build_file():
             print(
                 "\033[91m[RNTS] Error: No 'build.py' found in the current directory.\033[0m"
             )
             sys.exit(1)
+
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        lock_path.touch()
+
+        # invalidate all hashes if the build script had been changed
+        rnts_path.mkdir(exist_ok=True)
+        build_hash_file = rnts_path / "build_hash"
+        build_hash = compute_dir_hash(Path.cwd() / "build.py")
+        if build_hash_file.is_file():
+            if build_hash != build_hash_file.read_text(encoding="utf-8"):
+                shutil.rmtree(Path.cwd() / "out" / "hashes")
+                shutil.rmtree(Path.cwd() / "out" / "modules")
+                _ = build_hash_file.write_text(build_hash, encoding="utf-8")
+        else:
+            _ = build_hash_file.touch()
+            _ = build_hash_file.write_text(build_hash, encoding="utf-8")
 
         target = sys.argv[1]
         if "." not in target:

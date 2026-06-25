@@ -57,6 +57,11 @@ class BackendModule(Module):
 BackendModule()
 ```
 
+## Hash Expiry
+
+To account for changes in `build.py`, it is hashed with MD5. Whenever said file is changed, the hash of it will
+be different, and this triggers the expiry of all tasks' hashes alongside clearing all the build artifacts.
+
 ## Core Concepts & Decorators
 
 The build graph is constructed using 3 decorators.
