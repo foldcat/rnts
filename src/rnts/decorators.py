@@ -65,20 +65,32 @@ class ProcessCache:
 _PROCESS_CACHE = ProcessCache()
 
 
-def _compute_dir_hash(directory: Path) -> str:
-    # return empty string if path does not exist or is not a directory
-    if not directory.exists() or not directory.is_dir():
+def compute_dir_hash(path: Path) -> str:
+    # return empty string if path does not exist
+    if not path.exists():
         return ""
+
     hasher = hashlib.md5()
-    # sort paths to ensure deterministic hashing
-    for path in sorted(directory.rglob("*")):
-        if path.is_file():
-            # hash the relative path string
-            hasher.update(str(path.relative_to(directory)).encode("utf-8"))
-            # read file in chunks to avoid blowing up the ram
-            with open(path, "rb") as f:
-                while chunk := f.read(65536):
-                    hasher.update(chunk)
+
+    if path.is_file():
+        # a single file
+        with open(path, "rb") as f:
+            while chunk := f.read(65536):
+                hasher.update(chunk)
+
+    elif path.is_dir():
+        # sort paths to ensure deterministic hashing for directories
+        for sub_path in sorted(path.rglob("*")):
+            if sub_path.is_file():
+                # hash the relative path string to catch file moves/renames
+                hasher.update(str(sub_path.relative_to(path)).encode("utf-8"))
+                # read file in chunks to avoid blowing up the RAM
+                with open(sub_path, "rb") as f:
+                    while chunk := f.read(65536):
+                        hasher.update(chunk)
+    else:
+        raise Exception("Hashing Error")
+
     return hasher.hexdigest()
 
 
@@ -316,7 +328,7 @@ def source(func: Callable[[M], Path]) -> Callable[[M], Path]:
     @functools.wraps(func)
     def wrapper(self: M) -> Path:
         src_dir = func(self)
-        current_hash = _compute_dir_hash(self.module_dir / src_dir)
+        current_hash = compute_dir_hash(self.module_dir / src_dir)
 
         hash_file = (
             Path.cwd()
