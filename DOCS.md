@@ -115,7 +115,7 @@ and runs them concurrently in a `ThreadPoolExecutor` sized to the host's CPU cor
 only accepts tasks that returns the same type of data.
 
 `rnts.prun(*tasks)` is `gather` except it does not return anything. It will still block until all the internal tasks
-are done. Allows passing in tasks with different types should you enable a type checker.
+are done. Allows passing in tasks that returns different types should you enable a type checker.
 
 ### Task Output Capturing
 
