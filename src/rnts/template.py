@@ -1,8 +1,25 @@
+#          Copyright 2026 Shiver Contributors
+#
+#  Licensed under the Apache License, Version 2.0 (the "License");
+#  you may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+
 import importlib.util
-from types import ModuleType
-import urllib.request
 import sys
+import urllib.request
 from pathlib import Path
+from types import ModuleType
+
+from rich import print
+from rich.markup import escape
 
 
 def load_template(url: str, template_name: str) -> ModuleType:
@@ -14,13 +31,13 @@ def load_template(url: str, template_name: str) -> ModuleType:
 
     if not template_file.exists():
         print(
-            f"\033[94m[RNTS] Pulling template '{template_name}' from remote...\033[0m"
+            f"[blue][RNTS] Pulling template '{escape(template_name)}' from remote...[/blue]"
         )
         try:
             _ = urllib.request.urlretrieve(url, template_file)
         except Exception as e:
             print(
-                f"\033[91m[RNTS] Failed to download template '{template_name}': {e}\033[0m"
+                f"[red][RNTS] Failed to download template '{escape(template_name)}': {escape(str(e))}[/red]"
             )
             sys.exit(1)
 
@@ -36,7 +53,7 @@ def load_template(url: str, template_name: str) -> ModuleType:
             return template_module
         except Exception as e:
             print(
-                f"\033[91m[RNTS] Failed to execute template '{template_name}': {e}\033[0m"
+                f"[red][RNTS] Failed to execute template '{escape(template_name)}': {escape(str(e))}[/red]"
             )
             sys.exit(1)
 
